@@ -1,0 +1,124 @@
+---
+- name: Install rabbitmq and required packages
+  apt:
+    name: "{{ item }}"
+    update_cache: yes
+    state: present
+  loop: "{{ rabbitmq_ubuntu_packages }}"
+
+- name: Stop rabbitmq service
+  service:
+    name: rabbitmq-server
+    state: stopped
+
+- name: Increase RabbitMQ file descriptor limit
+  lineinfile:
+    path: /etc/default/rabbitmq-server
+    line: 'ulimit -n 65535'
+
+- name: Send sigterm to any running rabbitmq processes
+  shell: "pkill -u rabbitmq || true"
+
+- name: Create the desired directories
+  file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "0755"
+  loop:
+    - { path: "{{ rabbitmq_var_dir }}", owner: "{{ rabbitmq_user }}", group: "{{ rabbitmq_group }}" }
+    - { path: "{{ rabbitmq_config_dir }}", owner: "root", group: "root" }
+
+- name: Add rabbitmq erlang cookie
+  template:
+    src: "erlang.cookie.j2"
+    dest: "{{ rabbitmq_cookie_location }}"
+    owner: "{{ rabbitmq_user }}"
+    group: "{{ rabbitmq_group }}"
+    mode: "0400"
+  register: erlang_cookie
+
+- name: Add rabbitmq environment configuration
+  template:
+    src: "rabbitmq-env.conf.j2"
+    dest: "{{ rabbitmq_config_dir }}/rabbitmq-env.conf"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Add rabbitmq cluster configuration
+  template:
+    src: "rabbitmq.config.j2"
+    dest: "{{ rabbitmq_config_dir }}/rabbitmq.config"
+    owner: root
+    group: root
+    mode: "0644"
+  register: cluster_config
+
+- name: Install rabbitmq plugins
+  rabbitmq_plugin:
+    names: "{{ item }}"
+    state: enabled
+  loop: "{{ rabbitmq_plugins }}"
+
+- name: Remove mnesia configuration
+  file:
+    path: "{{ rabbitmq_mnesia_folder }}"
+    state: absent
+  when: erlang_cookie.changed or cluster_config.changed
+
+- name: Start rabbitmq service
+  service:
+    name: rabbitmq-server
+    state: started
+
+- name: Wait for rabbitmq to start
+  wait_for:
+    port: "{{ RABBITMQ_MANAGEMENT_PORT }}"
+    delay: 2
+
+- name: Remove guest user from rabbitmq
+  rabbitmq_user:
+    user: "guest"
+    state: absent
+
+- name: Add rabbitmq vhosts
+  rabbitmq_vhost:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ RABBITMQ_VHOSTS }}"
+
+- name: Add admin users
+  rabbitmq_user:
+    user: "{{ item[0].name }}"
+    password: "{{ item[0].password }}"
+    read_priv: "{{ item[0].read_priv | default('.*') }}"
+    write_priv: "{{ item[0].write_priv | default('.*') }}"
+    configure_priv: "{{ item[0].configure_priv | default('.*') }}"
+    tags: "{{ item[0].tags | default('administrator') }}"
+    state: "{{ item[0].state | default('present') }}"
+    vhost: "{{ item[1] }}"
+  with_nested:
+    - "{{ RABBITMQ_USERS }}"
+    - "{{ RABBITMQ_VHOSTS }}"
+
+- name: Make rabbitmq queues High Available(mirrored)
+  rabbitmq_policy:
+    name: HA
+    pattern: .*
+    vhost: "{{ item }}"
+  args:
+    tags:
+      ha-mode: all
+      ha-sync-mode: automatic
+  loop: "{{ RABBITMQ_VHOSTS }}"
+  when: RABBITMQ_CLUSTERED_HOSTS|length > 1
+
+- name: Install admin tools
+  get_url:
+    url: "http://localhost:{{ RABBITMQ_MANAGEMENT_PORT }}/cli/rabbitmqadmin"
+    dest: "/usr/local/bin/rabbitmqadmin"
+    owner: root
+    group: root
+    mode: "0655"

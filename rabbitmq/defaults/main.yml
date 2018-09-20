@@ -1,0 +1,35 @@
+---
+RABBITMQ_ERLANG_COOKIE: "VeryLongRadmonString"
+
+RABBITMQ_USERS:
+  - name: "admin"
+    password: "VeryStrongPassword"
+  - name: "dev"
+    password: "AgainStrongPassword"
+
+RABBITMQ_VHOSTS:
+  - '/'
+
+RABBITMQ_CLUSTERED_HOSTS:
+  - "rabbit@rabbitmq-server-01"
+  - "rabbit@rabbitmq-server-02"
+  - "rabbit@rabbitmq-server-03"
+
+RABBITMQ_PORT: 5672
+RABBITMQ_MANAGEMENT_PORT: 15672
+
+rabbitmq_user: "rabbitmq"
+rabbitmq_group: "rabbitmq"
+
+rabbitmq_ubuntu_packages:
+  - rabbitmq-server
+
+rabbitmq_config_dir: "/etc/rabbitmq"
+rabbitmq_var_dir: "/var/lib/rabbitmq"
+rabbitmq_cookie_location: "{{ rabbitmq_var_dir }}/.erlang.cookie"
+rabbitmq_mnesia_folder: "{{ rabbitmq_var_dir }}/mnesia"
+
+rabbitmq_ip: "{{ ansible_default_ipv4.address }}"
+
+rabbitmq_plugins:
+  - rabbitmq_management

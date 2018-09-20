@@ -1,0 +1,50 @@
+- hosts: all
+  become: yes
+  gather_facts: yes
+  vars:
+    # To skip elb operations use "-e ec2_in_out_from_elb=false"
+    ec2_in_out_from_elb: true
+    serial_count: 1
+    aws_region: "us-east-1"
+  serial: "{{ serial_count }}"
+
+  pre_tasks:
+    - name: Collect facts about EC2 Instance
+      action: ec2_facts
+      when: ec2_in_out_from_elb
+
+    - name: Display the EC2 Instance Id that will take out from ELB
+      debug:
+        msg: "{{ ansible_ec2_instance_id }}"
+      when: ec2_in_out_from_elb
+
+    - name: De-register the Instance from ELB
+      local_action: ec2_elb
+      args:
+        instance_id: "{{ ansible_ec2_instance_id }}"
+        region: "{{ aws_region }}"
+        state: absent
+        wait_timeout: 60
+      become: no
+      when: ec2_in_out_from_elb
+
+  roles:
+    - rabbitmq
+
+  post_tasks:
+    - name: Display the EC2 Instance Id that will add back to ELB
+      debug:
+        msg: "{{ ansible_ec2_instance_id }}"
+      when: ec2_in_out_from_elb
+
+    - name: Register the Instance back to the ELB
+      local_action: ec2_elb
+      args:
+        instance_id: "{{ ansible_ec2_instance_id }}"
+        ec2_elbs: "{{ item }}"
+        region: "{{ aws_region }}"
+        state: present
+        wait_timeout: 60
+      loop: "{{ ec2_elbs | default([]) }}"
+      become: no
+      when: ec2_in_out_from_elb

@@ -1,0 +1,6 @@
+% {{ ansible_managed }}
+
+[{rabbit, [
+  {log_levels, [{connection, info}]},
+  {cluster_nodes, {['{{ RABBITMQ_CLUSTERED_HOSTS|join("\',\'") }}'], disc}}
+]}].
